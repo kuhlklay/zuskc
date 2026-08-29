@@ -1,0 +1,8 @@
+[package]
+name = "dawsk_rs"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+bumpalo = "3.20.3"
+phf = { version = "0.14.0", features = ["macros"] }
