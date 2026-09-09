@@ -1,5 +1,8 @@
 mod expr;
+mod items;
 mod operator;
+mod patterns;
+mod restrictions;
 mod stmt;
 mod types;
 
@@ -9,55 +12,81 @@ use bumpalo::Bump;
 
 use crate::{
     ast::{
-        AST, Ident, Item, Publicity, PublicityKind,
-        string::{StringID, StringPool},
+        AST, Ident, ItemID, Publicity, PublicityKind,
+        items::{Item, ItemKind},
+        string::StringPool,
     },
     lexer::{
         Lexer,
         token::{Token, TokenKind},
     },
+    parser::restrictions::Restrictions,
     source::SourceFile,
 };
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
-    strings: StringPool<'a>,
-    pub ast: AST,
     buffer: VecDeque<Token>,
+    restrictions: Restrictions,
+    strings: StringPool<'a>,
+    ast: AST,
 }
 
 impl<'a> Parser<'a> {
-    pub(crate) fn new(src: &'a SourceFile, bump: &'a Bump) -> Self {
+    pub fn new(src: &'a SourceFile, bump: &'a Bump) -> Self {
         Self {
             lexer: Lexer::new(src),
+            buffer: VecDeque::with_capacity(8),
+            restrictions: Restrictions::empty(),
             strings: StringPool::new(bump),
             ast: AST::new(),
-            buffer: VecDeque::with_capacity(8),
         }
     }
 
-    pub(super) fn pos(&self) -> usize {
+    fn pos(&self) -> usize {
         self.lexer.pos
     }
 
-    pub(super) fn file_id(&self) -> usize {
+    fn file_id(&self) -> usize {
         self.lexer.file.file_id
     }
 
-    pub fn make_ident(&mut self, token: &Token) -> Ident {
-        let id = match &token.kind {
-            TokenKind::Ident => {
-                let text = self
-                    .lexer
-                    .file
-                    .content
-                    .get(token.span.as_range())
-                    .unwrap_or("")
-                    .as_bytes();
-                self.strings.intern(text)
-            }
+    #[allow(dead_code)]
+    pub fn ast(&self) -> &AST {
+        &self.ast
+    }
 
-            _ => StringID::EMPTY,
+    #[allow(dead_code)]
+    pub fn ast_mut(&mut self) -> &mut AST {
+        &mut self.ast
+    }
+
+    fn with_restrictions<T>(
+        &mut self,
+        restrictions: Restrictions,
+        f: impl FnOnce(&mut Self) -> Result<T, ()>,
+    ) -> Result<T, ()> {
+        let old = self.restrictions;
+
+        self.restrictions |= restrictions;
+
+        let result = f(self);
+
+        self.restrictions = old;
+
+        result
+    }
+
+    fn make_ident(&mut self, token: &Token) -> Ident {
+        let id = {
+            let text = self
+                .lexer
+                .file
+                .content
+                .get(token.span.as_range())
+                .unwrap_or("")
+                .as_bytes();
+            self.strings.intern(text)
         };
 
         Ident::new(id, token.span)
@@ -73,13 +102,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub(self) fn peek(&mut self, offset: usize) -> Token {
+    fn peek(&mut self, offset: usize) -> Token {
         self.ensure_buffered(offset);
 
         self.buffer[offset]
     }
 
-    pub(self) fn advance(&mut self, len: usize) {
+    fn advance(&mut self, len: usize) {
         for _ in 0..len {
             if self.buffer.pop_front().is_none() {
                 let _ = self.lexer.next();
@@ -87,13 +116,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub(self) fn consume(&mut self) -> Token {
+    fn consume(&mut self) -> Token {
         self.ensure_buffered(0);
 
         self.buffer.pop_front().unwrap()
     }
 
-    pub(self) fn expect(&mut self, kind: TokenKind) -> Result<Token, ()> {
+    fn expect(&mut self, kind: TokenKind) -> Result<Token, ()> {
         if self.peek(0).kind == kind {
             return Ok(self.consume());
         }
@@ -101,17 +130,20 @@ impl<'a> Parser<'a> {
         Err(())
     }
 
-    pub fn next(&mut self) -> Result<Item, ()> {
-        if self.peek(0).kind == TokenKind::EOF {
-            return Ok(Item::EOF);
+    pub fn next(&mut self) -> Result<ItemID, ()> {
+        let current = self.peek(0);
+
+        if current.kind == TokenKind::EOF {
+            return Ok(self
+                .ast
+                .items()
+                .push(Item::new(ItemKind::EOF, current.span)));
         }
 
-        let stmt = self.parse_stmt()?;
-
-        Ok(Item::Stmt(stmt))
+        self.parse_item()
     }
 
-    pub(self) fn parse_publicity(&mut self) -> Result<Option<Publicity>, ()> {
+    fn parse_publicity(&mut self) -> Result<Option<Publicity>, ()> {
         let first = self.peek(0);
 
         if first.kind != TokenKind::KwPub {
@@ -127,7 +159,7 @@ impl<'a> Parser<'a> {
         let _ = self.consume();
 
         let kind = match self.peek(0).kind {
-            TokenKind::KwSelfRef => {
+            TokenKind::KwSelf => {
                 self.advance(1);
                 PublicityKind::Self_
             }
@@ -157,9 +189,8 @@ impl<'a> Parser<'a> {
 
     fn parse_separated<T>(
         &mut self,
-        delimiter: TokenKind,
+        delimiter: Option<(TokenKind, Trailing)>,
         end: TokenKind,
-        trailing: Trailing,
         mut parse: impl FnMut(&mut Self) -> Result<T, ()>,
     ) -> Result<Vec<T>, ()> {
         let mut items = Vec::new();
@@ -171,22 +202,25 @@ impl<'a> Parser<'a> {
         loop {
             items.push(parse(self)?);
 
-            match self.peek(0).kind {
-                kind if kind == delimiter => {
-                    self.advance(1);
+            if self.peek(0).kind == end {
+                break;
+            }
 
-                    // trailing comma
-                    if self.peek(0).kind == end {
-                        match trailing {
-                            Trailing::Allowed => break,
-                            Trailing::Forbidden => return Err(()),
-                        }
-                    }
+            let Some((delimiter_kind, ref trailing)) = delimiter else {
+                return Err(());
+            };
+
+            if self.peek(0).kind != delimiter_kind {
+                return Err(());
+            }
+
+            self.advance(1);
+
+            if self.peek(0).kind == end {
+                match trailing {
+                    Trailing::Allowed => break,
+                    Trailing::Forbidden => return Err(()),
                 }
-
-                kind if kind == end => break,
-
-                _ => return Err(()),
             }
         }
 
@@ -194,7 +228,8 @@ impl<'a> Parser<'a> {
     }
 }
 
-pub enum Trailing {
+#[allow(dead_code)]
+enum Trailing {
     Allowed,
     Forbidden,
 }

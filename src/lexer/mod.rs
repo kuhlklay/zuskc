@@ -20,11 +20,13 @@ impl<'a> Lexer<'a> {
     }
 
     fn peek(&self, offset: usize) -> &u8 {
-        self.input().get(self.pos + offset).unwrap_or(&b'\0')
+        self.input()
+            .get(self.pos as usize + offset)
+            .unwrap_or(&b'\0')
     }
 
     fn advance(&mut self, offset: usize) {
-        self.pos += offset;
+        self.pos += offset as usize;
     }
 
     fn tokenize(&mut self, kind: TokenKind, start: usize, len: usize, spacing: Spacing) -> Token {
@@ -156,7 +158,7 @@ impl<'a> Lexer<'a> {
 
             b'~' => {
                 let spacing = match self.peek(1) {
-                    b'~' => Spacing::Joint,
+                    b'=' => Spacing::Joint,
                     _ => Spacing::Alone,
                 };
 

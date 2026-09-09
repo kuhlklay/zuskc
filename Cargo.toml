@@ -1,8 +1,11 @@
 [package]
-name = "dawsk_rs"
+name = "zuskc"
 version = "0.0.1"
 edition = "2024"
 
 [dependencies]
+bitflags = "2.13.1"
 bumpalo = "3.20.3"
 phf = { version = "0.14.0", features = ["macros"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"

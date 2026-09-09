@@ -1,13 +1,16 @@
 mod ast;
+mod diagnostics;
 mod lexer;
 mod parser;
 mod source;
+mod symbols;
+mod utils;
 
 use std::{env, fs, path::PathBuf, str::FromStr};
 
 use bumpalo::Bump;
 
-use crate::{ast::Item, parser::Parser, source::SourceFile};
+use crate::{ast::items::ItemKind, parser::Parser, source::SourceFile};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args();
@@ -23,10 +26,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut parser = Parser::new(&src_file, &bump);
 
-    while let Ok(stmt) = parser.next()
-        && stmt != Item::EOF
+    while let Ok(item) = parser.next()
+        && parser.ast_mut().items()[item.index()].kind != ItemKind::EOF
     {
-        println!("\n---- Statement ----\n{:?}\n", stmt);
+        println!("\n---- Item ----\n{:?}\n", item);
     }
 
     println!("---- File contents ----\n{}", source);

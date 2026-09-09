@@ -1,157 +1,65 @@
 pub mod expr;
+pub mod items;
+pub mod patterns;
 pub mod stmt;
 pub mod string;
 pub mod types;
 
 use crate::{
-    ast::{expr::Expr, stmt::Stmt, string::StringID, types::Type},
+    ast::{expr::Expr, items::Item, patterns::Pat, stmt::Stmt, string::StringID, types::Ty},
+    define_id,
     source::Span,
+    utils::arena::Arena,
 };
 
 #[derive(Debug)]
 pub struct AST {
-    items: Vec<Item>,
-    exprs: Vec<Expr>,
-    stmts: Vec<Stmt>,
-    types: Vec<Type>,
-    patterns: Vec<Pattern>,
+    items: Arena<ItemID, Item>,
+    exprs: Arena<ExprID, Expr>,
+    stmts: Arena<StmtID, Stmt>,
+    types: Arena<TyID, Ty>,
+    patterns: Arena<PatID, Pat>,
 }
 
 impl AST {
     pub fn new() -> Self {
         Self {
-            items: Vec::new(),
-            exprs: Vec::new(),
-            stmts: Vec::new(),
-            types: Vec::new(),
-            patterns: Vec::new(),
+            items: Arena::new(),
+            exprs: Arena::new(),
+            stmts: Arena::new(),
+            types: Arena::new(),
+            patterns: Arena::new(),
         }
     }
 
-    pub fn add_expr(&mut self, expr: Expr) -> ExprID {
-        let id = ExprID(self.exprs.len() as u32);
-        self.exprs.push(expr);
-        id
+    pub fn items(&mut self) -> &mut Arena<ItemID, Item> {
+        &mut self.items
     }
 
-    pub fn expr(&self, id: ExprID) -> &Expr {
-        &self.exprs[id.index()]
+    pub fn exprs(&mut self) -> &mut Arena<ExprID, Expr> {
+        &mut self.exprs
     }
 
-    pub fn expr_mut(&mut self, id: ExprID) -> &mut Expr {
-        &mut self.exprs[id.index()]
+    pub fn stmts(&mut self) -> &mut Arena<StmtID, Stmt> {
+        &mut self.stmts
     }
 
-    pub fn add_stmt(&mut self, stmt: Stmt) -> StmtID {
-        let id = StmtID(self.stmts.len() as u32);
-        self.stmts.push(stmt);
-        id
+    pub fn types(&mut self) -> &mut Arena<TyID, Ty> {
+        &mut self.types
     }
 
-    pub fn stmt(&self, id: StmtID) -> &Stmt {
-        &self.stmts[id.index()]
+    pub fn patterns(&mut self) -> &mut Arena<PatID, Pat> {
+        &mut self.patterns
     }
-
-    pub fn stmt_mut(&mut self, id: StmtID) -> &mut Stmt {
-        &mut self.stmts[id.index()]
-    }
-
-    pub fn add_type(&mut self, ty: Type) -> TypeID {
-        let id = TypeID(self.types.len() as u32);
-        self.types.push(ty);
-        id
-    }
-
-    pub fn ty(&self, id: TypeID) -> &Type {
-        &self.types[id.index()]
-    }
-
-    pub fn ty_mut(&mut self, id: TypeID) -> &mut Type {
-        &mut self.types[id.index()]
-    }
-
-    pub fn add_pattern(&mut self, pattern: Pattern) -> PatternID {
-        let id = PatternID(self.patterns.len() as u32);
-        self.patterns.push(pattern);
-        id
-    }
-
-    pub fn pattern(&self, id: PatternID) -> &Pattern {
-        &self.patterns[id.index()]
-    }
-
-    pub fn pattern_mut(&mut self, id: PatternID) -> &mut Pattern {
-        &mut self.patterns[id.index()]
-    }
-}
-
-macro_rules! define_id {
-    ($name:ident) => {
-        #[repr(transparent)]
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $name(u32);
-
-        impl $name {
-            pub const fn new(index: u32) -> Self {
-                Self(index)
-            }
-
-            pub const fn index(self) -> usize {
-                self.0 as usize
-            }
-        }
-    };
 }
 
 define_id!(ItemID);
 define_id!(ExprID);
 define_id!(StmtID);
-define_id!(TypeID);
+define_id!(TyID);
+define_id!(PatID);
 
-define_id!(PatternID);
-
-#[derive(Debug, PartialEq)]
-pub(super) enum Item {
-    Include,
-    Import,
-    Stmt(StmtID),
-    EOF,
-}
-
-#[derive(Debug)]
-pub(super) struct PatternField {
-    pub ident: Ident,
-    pub pattern: Option<Pattern>, // None = shorthand { x } instead of { x: x }
-    pub span: Span,
-}
-
-#[derive(Debug)]
-pub(super) enum Pattern {
-    Wildcard {
-        span: Span,
-    },
-
-    Binding {
-        ident: Ident,
-    },
-
-    Literal {
-        expr: ExprID,
-    },
-
-    Struct {
-        // path: TypePath,
-        fields: Box<[PatternField]>,
-        span: Span,
-    },
-
-    Tuple {
-        elems: Box<[PatternID]>,
-        span: Span,
-    },
-}
-
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Ident {
     id: StringID,
     span: Span,
@@ -161,9 +69,13 @@ impl Ident {
     pub fn new(id: StringID, span: Span) -> Self {
         Self { id, span }
     }
+
+    pub fn span(&self) -> Span {
+        self.span
+    }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PublicityKind {
     Public,
     Root,
@@ -172,7 +84,7 @@ pub enum PublicityKind {
     Self_,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Publicity {
     pub kind: PublicityKind,
     pub span: Span,
@@ -184,7 +96,7 @@ impl Publicity {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mutability {
     Immutable,
     Mutable { span: Span },

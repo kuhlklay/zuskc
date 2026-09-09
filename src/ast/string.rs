@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use bumpalo::Bump;
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct StringID(usize);
+use crate::define_id;
+
+define_id!(StringID);
 
 impl StringID {
     pub const EMPTY: StringID = StringID(0);

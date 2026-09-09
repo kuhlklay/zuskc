@@ -1,90 +1,102 @@
 use crate::{
-    ast::{ExprID, Ident, Publicity, TypeID},
+    ast::{ExprID, Ident, TyID},
     source::Span,
 };
 
-#[derive(Debug, Clone)]
-pub(super) enum TypeKind {
+#[derive(Debug, PartialEq)]
+pub enum TyKind {
     Named {
         ident: Ident,
         args: Option<GenericArgs>,
     },
 
     Slice {
-        inner: TypeID,
+        inner: TyID,
     },
 
     Array {
-        inner: TypeID,
+        inner: TyID,
         size: ExprID,
     },
 
     Tuple {
-        inner: Vec<TypeID>,
+        inner: Vec<TyID>,
     },
 
     Ref {
-        inner: TypeID,
+        inner: TyID,
+    },
+
+    MutRef {
+        inner: TyID,
     },
 
     Ptr {
-        inner: TypeID,
+        inner: TyID,
     },
 
+    Self_,
     Unit,
-    Err,
 }
 
-#[derive(Debug, Clone)]
-pub struct Type {
-    pub kind: TypeKind,
+#[derive(Debug, PartialEq)]
+pub struct Ty {
+    pub kind: TyKind,
     pub span: Span,
 }
 
-impl Type {
-    pub fn new(kind: TypeKind, span: Span) -> Self {
+impl Ty {
+    pub fn new(kind: TyKind, span: Span) -> Self {
         Self { kind, span }
     }
 
     pub fn named(ident: Ident, args: Option<GenericArgs>, span: Span) -> Self {
-        Self::new(TypeKind::Named { ident, args }, span)
+        Self::new(TyKind::Named { ident, args }, span)
     }
 
-    pub fn slice(inner: TypeID, span: Span) -> Self {
-        Self::new(TypeKind::Slice { inner }, span)
+    pub fn slice(inner: TyID, span: Span) -> Self {
+        Self::new(TyKind::Slice { inner }, span)
     }
 
-    pub fn array(inner: TypeID, size: ExprID, span: Span) -> Self {
-        Self::new(TypeKind::Array { inner, size }, span)
+    pub fn array(inner: TyID, size: ExprID, span: Span) -> Self {
+        Self::new(TyKind::Array { inner, size }, span)
     }
 
-    pub fn tuple(inner: Vec<TypeID>, span: Span) -> Self {
-        Self::new(TypeKind::Tuple { inner }, span)
+    pub fn tuple(inner: Vec<TyID>, span: Span) -> Self {
+        Self::new(TyKind::Tuple { inner }, span)
     }
 
-    pub fn reference(inner: TypeID, span: Span) -> Self {
-        Self::new(TypeKind::Ref { inner }, span)
+    pub fn reference(inner: TyID, span: Span) -> Self {
+        Self::new(TyKind::Ref { inner }, span)
     }
 
-    pub fn pointer(inner: TypeID, span: Span) -> Self {
-        Self::new(TypeKind::Ptr { inner }, span)
+    pub fn mutable_reference(inner: TyID, span: Span) -> Self {
+        Self::new(TyKind::MutRef { inner }, span)
+    }
+
+    pub fn pointer(inner: TyID, span: Span) -> Self {
+        Self::new(TyKind::Ptr { inner }, span)
+    }
+
+    pub fn self_(span: Span) -> Self {
+        Self::new(TyKind::Self_, span)
     }
 
     pub fn unit(span: Span) -> Self {
-        Self::new(TypeKind::Unit, span)
+        Self::new(TyKind::Unit, span)
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct GenericParam {
     pub name: Ident,
-    pub bounds: Vec<TypeID>,
-    pub default: Option<TypeID>,
+    pub bounds: Vec<TyID>,
+    pub default: Option<TyID>,
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct GenericArgs {
-    pub args: Vec<TypeID>,
+    pub args: Vec<TyID>,
     pub span: Span,
 }

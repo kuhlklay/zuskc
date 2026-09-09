@@ -11,7 +11,7 @@ use crate::{
 impl<'a> Parser<'a> {
     pub(super) fn parse_binary_operator(&mut self) -> Option<BinaryOperator> {
         let start = self.pos();
-        let arr = [self.peek(0), self.peek(1)];
+        let arr = [self.peek(0), self.peek(1), self.peek(2)];
 
         let (kind, len) = match arr[0].kind {
             TokenKind::Plus => (BinaryOperatorKind::Add, 1),
@@ -65,6 +65,14 @@ impl<'a> Parser<'a> {
             }
 
             TokenKind::Caret => (BinaryOperatorKind::BitXor, 1),
+
+            TokenKind::Dot if arr[0].is_joint() && arr[1].kind == TokenKind::Dot => {
+                if arr[1].is_joint() && arr[2].kind == TokenKind::Eq {
+                    (BinaryOperatorKind::RangeInclusive, 3)
+                } else {
+                    (BinaryOperatorKind::Range, 2)
+                }
+            }
 
             _ => return None,
         };

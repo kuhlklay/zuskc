@@ -9,9 +9,13 @@ pub enum TokenKind {
     Ident,
     Int,
     Float,
-    String,
+    Str,
+    ByteStr,
+    CStr,
+    RawStr,
+    RawByteStr,
     Char,
-    Bool,
+    ByteChar,
 
     KwDec,
     KwMut,
@@ -25,6 +29,7 @@ pub enum TokenKind {
     KwTrait,
 
     KwFn,
+    KwImpl,
 
     KwComptime,
 
@@ -32,7 +37,7 @@ pub enum TokenKind {
 
     KwImport,
     KwSelf,
-    KwSelfRef,
+    KwSelfType,
     KwModule,
     KwSuper,
     KwRoot,
@@ -113,10 +118,6 @@ impl Token {
     pub fn is_joint(&self) -> bool {
         self.spacing == Spacing::Joint
     }
-
-    pub fn is_alone(&self) -> bool {
-        self.spacing == Spacing::Alone
-    }
 }
 
 pub static KEYWORDS: phf::Map<&'static str, TokenKind> = phf_map! {
@@ -132,6 +133,7 @@ pub static KEYWORDS: phf::Map<&'static str, TokenKind> = phf_map! {
     "trait" => TokenKind::KwTrait,
 
     "fn" => TokenKind::KwFn,
+    "impl" => TokenKind::KwImpl,
 
     "comptime" => TokenKind::KwComptime,
 
@@ -139,6 +141,7 @@ pub static KEYWORDS: phf::Map<&'static str, TokenKind> = phf_map! {
 
     "import" => TokenKind::KwImport,
     "self" => TokenKind::KwSelf,
+    "Self" => TokenKind::KwSelfType,
     "module" => TokenKind::KwModule,
     "super" => TokenKind::KwSuper,
     "root" => TokenKind::KwRoot,
@@ -161,5 +164,4 @@ pub static KEYWORDS: phf::Map<&'static str, TokenKind> = phf_map! {
 
     "defer" => TokenKind::KwDefer,
     "errdefer" => TokenKind::KwErrdefer,
-
 };

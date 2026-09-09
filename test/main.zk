@@ -1,0 +1,58 @@
+fn a() {
+	dec mut a: i32 = !1;
+
+	if wa.span == 2 {
+		dec mut t = -13;
+	}
+}
+
+pub const A: u32 = a?.or()? + -2;
+
+pub(module) type AllocVec<
+	T: Debug + Format + Clone,
+	A: Allocator = Global,
+> = Vec<T, A>;
+
+pub struct Span<T: Clone + Index + IndexMut> {
+	pub start: usize,
+	pub len: usize,
+	pub file_id: T,
+}
+
+pub enum Trailing {
+	Allowed = 303,
+	Forbidden = 404,
+}
+
+union Result<T, E: Error> {
+	Ok(T),
+	Err(E),
+}
+
+union Option<T> {
+	Some(T),
+	None,
+}
+
+pub const fn a<T: Clone>(&self, a: Vec<A>) -> Result<T, ()> {
+	self.a.into()
+}
+
+impl<T, E: Error> Residue for Result<T, E> {
+	const fn residate(&self) -> T {
+		//  match &self {
+		//		Ok(o) => o,
+		//		Err(e) => panic!("try to unwrap error"),
+		//	}
+	}
+}
+
+pub trait ThreadSafe = Send + Sync;
+
+trait T = ;
+
+pub trait Unwrappable {
+		type Output = T;
+
+		fn a() -> Output;
+	}

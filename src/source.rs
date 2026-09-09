@@ -1,27 +1,44 @@
-use std::{ops::Range, path::PathBuf};
+use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
 pub struct Span {
-    pub file_id: usize,
-    pub start: usize,
-    pub len: usize,
+    file_id: usize,
+    start: usize,
+    len: usize,
 }
 
 impl Span {
-    pub fn new(start: usize, len: usize, file_id: usize /*, source: SpanSource */) -> Self {
+    pub fn new(start: usize, len: usize, file_id: usize) -> Self {
         Self {
             file_id,
             start,
             len,
-            // source,
         }
     }
 
-    pub const fn end(self) -> usize {
+    #[inline]
+    pub const fn end(&self) -> usize {
         self.start + self.len
     }
 
-    pub fn as_range(&self) -> Range<usize> {
+    #[inline]
+    pub const fn start(&self) -> usize {
+        self.start
+    }
+
+    #[inline]
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    #[inline]
+    pub const fn file_id(&self) -> usize {
+        self.file_id
+    }
+
+    pub fn as_range(&self) -> std::ops::Range<usize> {
         self.start..self.end()
     }
 
@@ -33,13 +50,42 @@ impl Span {
 
         Span::new(start, end - start, self.file_id)
     }
+
+    pub fn until(self, other: Span) -> Span {
+        assert_eq!(self.file_id, other.file_id);
+        assert!(other.start >= self.start);
+
+        Span::new(self.start, other.end() - self.start, self.file_id)
+    }
+}
+
+pub struct Position {
+    pub line: usize,
+    pub character: usize,
+}
+
+impl Position {
+    pub fn new(line: usize, character: usize) -> Self {
+        Self { line, character }
+    }
+}
+
+pub struct Range {
+    pub start: Position,
+    pub end: Position,
+}
+
+impl Range {
+    pub fn new(start: Position, end: Position) -> Self {
+        Self { start, end }
+    }
 }
 
 pub struct SourceFile {
     pub entry: PathBuf,
     pub file_id: usize,
     pub content: String,
-    line_starts: Vec<usize>,
+    pub line_starts: Vec<usize>,
 }
 
 impl SourceFile {
@@ -58,6 +104,20 @@ impl SourceFile {
             file_id,
             content,
             line_starts,
+        }
+    }
+
+    pub fn position_at(&self, offset: usize) -> Position {
+        let line = match self.line_starts.binary_search(&offset) {
+            Ok(line) => line,
+            Err(line) => line.saturating_sub(1),
+        };
+
+        let line_start = self.line_starts[line as usize];
+
+        Position {
+            line,
+            character: offset - line_start,
         }
     }
 }

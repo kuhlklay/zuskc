@@ -1,17 +1,11 @@
 use std::fmt::{self, Display, Formatter};
 
 use crate::{
-    ast::{ExprID, Ident, StmtID, TypeID},
+    ast::{ExprID, Ident, StmtID, TyID, types::GenericArgs},
     source::Span,
 };
 
-#[derive(Debug)]
-pub struct ExprRef {
-    pub id: ExprID,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
@@ -42,12 +36,12 @@ impl Expr {
         Self::new(ExprKind::Str, span)
     }
 
-    pub fn prefix(expr: ExprID, op: PrefixOperator, span: Span) -> Self {
-        Self::new(ExprKind::Prefix(PrefixExpr { expr, op }), span)
+    pub fn prefix(target: ExprID, op: PrefixOperator, span: Span) -> Self {
+        Self::new(ExprKind::Prefix(PrefixExpr { target, op }), span)
     }
 
-    pub fn postfix(expr: ExprID, op: PostfixOperator, span: Span) -> Self {
-        Self::new(ExprKind::Postfix(PostfixExpr { expr, op }), span)
+    pub fn postfix(target: ExprID, op: PostfixOperator, span: Span) -> Self {
+        Self::new(ExprKind::Postfix(PostfixExpr { target, op }), span)
     }
 
     pub fn binary(left: ExprID, right: ExprID, operator: BinaryOperator, span: Span) -> Self {
@@ -65,7 +59,7 @@ impl Expr {
         Self::new(ExprKind::Variable(ident), ident.span)
     }
 
-    pub fn cast(expr: ExprID, ty: TypeID, span: Span) -> Self {
+    pub fn cast(expr: ExprID, ty: TyID, span: Span) -> Self {
         Self::new(ExprKind::Cast(CastExpr { expr, ty }), span)
     }
 
@@ -73,7 +67,12 @@ impl Expr {
         Self::new(ExprKind::Block(BlockExpr { items: block }), span)
     }
 
-    pub fn call(callee: ExprID, args: Vec<ExprID>, generics: Vec<TypeID>, span: Span) -> Self {
+    pub fn call(
+        callee: ExprID,
+        args: Vec<ExprID>,
+        generics: Option<GenericArgs>,
+        span: Span,
+    ) -> Self {
         Self::new(
             ExprKind::Call(CallExpr {
                 callee,
@@ -104,7 +103,7 @@ impl Expr {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq)]
 pub enum ExprKind {
     // r(ErrorGuaranteed)
     Bool(bool),
@@ -137,7 +136,7 @@ pub enum ExprKind {
     If(IfExpr),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum PrefixOperatorKind {
     Negate,
     Not,
@@ -156,7 +155,7 @@ impl Display for PrefixOperatorKind {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq)]
 pub struct PrefixOperator {
     pub kind: PrefixOperatorKind,
     pub span: Span,
@@ -168,13 +167,13 @@ impl PrefixOperator {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq)]
 pub struct PrefixExpr {
+    pub target: ExprID,
     pub op: PrefixOperator,
-    pub expr: ExprID,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum PostfixOperatorKind {
     Unwrap,
 }
@@ -189,7 +188,7 @@ impl Display for PostfixOperatorKind {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq)]
 pub struct PostfixOperator {
     pub kind: PostfixOperatorKind,
     pub span: Span,
@@ -201,13 +200,13 @@ impl PostfixOperator {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq)]
 pub struct PostfixExpr {
-    pub expr: ExprID,
+    pub target: ExprID,
     pub op: PostfixOperator,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum BinaryOperatorKind {
     Add,
     Subtract,
@@ -272,7 +271,7 @@ impl Display for BinaryOperatorKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct BinaryOperator {
     pub kind: BinaryOperatorKind,
     pub span: Span,
@@ -284,7 +283,7 @@ impl BinaryOperator {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq)]
 pub struct BinaryExpr {
     pub left: ExprID,
     pub right: ExprID,
@@ -301,7 +300,7 @@ impl BinaryExpr {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum AssignOperatorKind {
     Default,
 
@@ -344,55 +343,50 @@ impl Display for AssignOperatorKind {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq)]
 pub struct AssignOperator {
-    kind: AssignOperatorKind,
-    span: Span,
+    pub kind: AssignOperatorKind,
+    pub span: Span,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq)]
 pub struct AssignExpr {
-    expr: ExprID,
-    op: AssignOperator,
+    pub expr: ExprID,
+    pub op: AssignOperator,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq)]
 pub struct CastExpr {
-    expr: ExprID,
-    ty: TypeID,
+    pub expr: ExprID,
+    pub ty: TyID,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct BlockExpr {
-    items: Vec<StmtID>,
+    pub items: Vec<StmtID>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct CallExpr {
-    callee: ExprID,
-    args: Vec<ExprID>,
-    generics: Vec<TypeID>,
+    pub callee: ExprID,
+    pub args: Vec<ExprID>,
+    pub generics: Option<GenericArgs>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct IndexExpr {
-    expr: ExprID,
+    pub expr: ExprID,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct FieldExpr {
-    callee: ExprID,
-    field: ExprID,
+    pub callee: ExprID,
+    pub field: ExprID,
 }
 
-// #[derive(Debug, Clone)]
-// struct SwitchExpr {
-//     field: Type
-// }
-
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct IfExpr {
-    condition: ExprID,
-    body: ExprID,
-    branch: Option<ExprID>,
+    pub condition: ExprID,
+    pub body: ExprID,
+    pub branch: Option<ExprID>,
 }

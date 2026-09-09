@@ -1,14 +1,14 @@
 use crate::{
     ast::{
-        ExprID, TypeID,
-        types::{GenericArgs, GenericParam, Type},
+        ExprID, TyID,
+        types::{GenericArgs, GenericParam, Ty},
     },
     lexer::token::TokenKind,
     parser::{Parser, Trailing},
 };
 
 impl<'a> Parser<'a> {
-    pub fn parse_type(&mut self) -> Result<TypeID, ()> {
+    pub fn parse_type(&mut self) -> Result<TyID, ()> {
         let mut span = self.peek(0).span;
 
         match self.peek(0).kind {
@@ -29,10 +29,10 @@ impl<'a> Parser<'a> {
                 span = span.merge(close.span);
 
                 if let Some(size) = size_expr {
-                    return Ok(self.ast.add_type(Type::array(inner, size, span)));
+                    return Ok(self.ast.types().push(Ty::array(inner, size, span)));
                 }
 
-                Ok(self.ast.add_type(Type::slice(inner, span)))
+                Ok(self.ast.types().push(Ty::slice(inner, span)))
             }
 
             TokenKind::LeftParen => {
@@ -42,9 +42,8 @@ impl<'a> Parser<'a> {
                     Vec::new()
                 } else {
                     self.parse_separated(
-                        TokenKind::Comma,
+                        Some((TokenKind::Comma, Trailing::Allowed)),
                         TokenKind::RightParen,
-                        Trailing::Allowed,
                         Self::parse_type,
                     )?
                 };
@@ -53,10 +52,10 @@ impl<'a> Parser<'a> {
 
                 span = span.merge(close.span);
 
-                Ok(self.ast.add_type(if inner.is_empty() {
-                    Type::unit(span)
+                Ok(self.ast.types().push(if inner.is_empty() {
+                    Ty::unit(span)
                 } else {
-                    Type::tuple(inner, span)
+                    Ty::tuple(inner, span)
                 }))
             }
 
@@ -65,19 +64,25 @@ impl<'a> Parser<'a> {
 
                 let inner = self.parse_type()?;
 
-                let span = amp.span.merge(self.ast.ty(inner).span);
+                let span = amp.span.merge(self.ast.types()[inner.index()].span);
 
-                Ok(self.ast.add_type(Type::reference(inner, span)))
+                Ok(self.ast.types().push(Ty::reference(inner, span)))
             }
 
             TokenKind::Asterisk => {
-                let astk = self.consume();
+                let asterisk = self.consume();
 
                 let inner = self.parse_type()?;
 
-                let span = astk.span.merge(self.ast.ty(inner).span);
+                let span = asterisk.span.merge(self.ast.types()[inner.index()].span);
 
-                Ok(self.ast.add_type(Type::pointer(inner, span)))
+                Ok(self.ast.types().push(Ty::pointer(inner, span)))
+            }
+
+            TokenKind::KwSelf => {
+                let span = self.consume().span;
+
+                Ok(self.ast.types().push(Ty::self_(span)))
             }
 
             TokenKind::Ident => {
@@ -90,18 +95,12 @@ impl<'a> Parser<'a> {
                     None
                 };
 
-                let args = if self.peek(0).kind == TokenKind::LeftAngle {
-                    Some(self.parse_generic_args()?)
-                } else {
-                    None
-                };
-
                 let span = match &args {
                     Some(args) => token.span.merge(args.span),
                     None => token.span,
                 };
 
-                Ok(self.ast.add_type(Type::named(ident, args, span)))
+                Ok(self.ast.types().push(Ty::named(ident, args, span)))
             }
 
             _ => Err(()),
@@ -117,9 +116,8 @@ impl<'a> Parser<'a> {
             Vec::with_capacity(0)
         } else {
             self.parse_separated(
-                TokenKind::Comma,
+                Some((TokenKind::Comma, Trailing::Allowed)),
                 TokenKind::RightAngle,
-                Trailing::Allowed,
                 Self::parse_type,
             )?
         };
@@ -140,9 +138,8 @@ impl<'a> Parser<'a> {
             Vec::with_capacity(0)
         } else {
             self.parse_separated(
-                TokenKind::Comma,
+                Some((TokenKind::Comma, Trailing::Allowed)),
                 TokenKind::RightAngle,
-                Trailing::Allowed,
                 Self::single_generic_param,
             )?
         };
@@ -177,8 +174,8 @@ impl<'a> Parser<'a> {
         };
 
         let end_span = default
-            .map(|t| self.ast.ty(t).span)
-            .or_else(|| bounds.last().map(|t| self.ast.ty(*t).span))
+            .map(|t| self.ast.types()[t.index()].span)
+            .or_else(|| bounds.last().map(|t| self.ast.types()[t.index()].span))
             .unwrap_or(token.span);
 
         Ok(GenericParam {
