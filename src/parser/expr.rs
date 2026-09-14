@@ -61,7 +61,7 @@ impl<'a> Parser<'a> {
         let mut expr = self.parse_primary_expr()?;
 
         loop {
-            let arr = [self.peek(0), self.peek(1)];
+            let arr = [*self.peek(0), *self.peek(1)];
 
             let mut span = arr[0].span;
 
@@ -167,7 +167,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_primary_expr(&mut self) -> Result<ExprID, ()> {
-        let current = self.peek(0);
+        let current = *self.peek(0);
 
         match current.kind {
             TokenKind::Ident | TokenKind::KwSelf => {

@@ -13,41 +13,45 @@ pub enum ItemKind {
     Fn(FnDecItem),
     Impl(ImplDecItem),
     Trait(TraitDecItem),
+
+    Mod(ModuleDecItem),
+    // Use(UseDecItem),
     EOF,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Item {
     pub kind: ItemKind,
+    pub publicity: Option<Publicity>,
     pub span: Span,
 }
 
 impl Item {
-    pub fn new(kind: ItemKind, span: Span) -> Self {
-        Item { kind, span }
+    pub fn new(kind: ItemKind, publicity: Option<Publicity>, span: Span) -> Self {
+        Item {
+            kind,
+            publicity,
+            span,
+        }
     }
 
     pub fn const_dec(
         ident: Ident,
-        publicity: Option<Publicity>,
+        publicity: Publicity,
         ty: Option<TyID>,
         init: ExprID,
         span: Span,
     ) -> Self {
         Self::new(
-            ItemKind::Const(ConstDecItem {
-                ident,
-                publicity,
-                ty,
-                init,
-            }),
+            ItemKind::Const(ConstDecItem { ident, ty, init }),
+            Some(publicity),
             span,
         )
     }
 
     pub fn type_dec(
         ident: Ident,
-        publicity: Option<Publicity>,
+        publicity: Publicity,
         generics: Option<Vec<GenericParam>>,
         target: TyID,
         span: Span,
@@ -55,17 +59,17 @@ impl Item {
         Self::new(
             ItemKind::Type(TyDecItem {
                 ident,
-                publicity,
                 generics,
                 target,
             }),
+            Some(publicity),
             span,
         )
     }
 
     pub fn struct_dec(
         ident: Ident,
-        publicity: Option<Publicity>,
+        publicity: Publicity,
         generics: Option<Vec<GenericParam>>,
         fields: Vec<StructField>,
         span: Span,
@@ -73,17 +77,17 @@ impl Item {
         Self::new(
             ItemKind::Struct(StructDecItem {
                 ident,
-                publicity,
                 generics,
                 fields,
             }),
+            Some(publicity),
             span,
         )
     }
 
     pub fn union_dec(
         ident: Ident,
-        publicity: Option<Publicity>,
+        publicity: Publicity,
         generics: Option<Vec<GenericParam>>,
         variants: Vec<UnionVariant>,
         span: Span,
@@ -91,33 +95,30 @@ impl Item {
         Self::new(
             ItemKind::Union(UnionDecItem {
                 ident,
-                publicity,
                 generics,
                 variants,
             }),
+            Some(publicity),
             span,
         )
     }
 
     pub fn enum_dec(
         ident: Ident,
-        publicity: Option<Publicity>,
+        publicity: Publicity,
         variants: Vec<EnumVariant>,
         span: Span,
     ) -> Self {
         Self::new(
-            ItemKind::Enum(EnumDecItem {
-                ident,
-                publicity,
-                variants,
-            }),
+            ItemKind::Enum(EnumDecItem { ident, variants }),
+            Some(publicity),
             span,
         )
     }
 
     pub fn fn_dec(
         ident: Ident,
-        publicity: Option<Publicity>,
+        publicity: Publicity,
         constant: Option<Span>,
         generics: Option<Vec<GenericParam>>,
         params: Option<Vec<FnParam>>,
@@ -128,13 +129,13 @@ impl Item {
         Self::new(
             ItemKind::Fn(FnDecItem {
                 ident,
-                publicity,
                 constant,
                 generics,
                 params,
                 ty,
                 body,
             }),
+            Some(publicity),
             span,
         )
     }
@@ -153,38 +154,42 @@ impl Item {
                 trait_ty,
                 items,
             }),
+            None,
             span,
         )
     }
 
     pub fn compound_trait_dec(
         ident: Ident,
-        publicity: Option<Publicity>,
+        publicity: Publicity,
         items: Vec<Ident>,
         span: Span,
     ) -> Self {
         Self::new(
             ItemKind::Trait(TraitDecItem {
                 ident,
-                publicity,
                 kind: TraitKind::Compound { items },
             }),
+            Some(publicity),
             span,
         )
     }
 
-    pub fn trait_dec(
-        ident: Ident,
-        publicity: Option<Publicity>,
-        items: Vec<ItemID>,
-        span: Span,
-    ) -> Self {
+    pub fn trait_dec(ident: Ident, publicity: Publicity, items: Vec<ItemID>, span: Span) -> Self {
         Self::new(
             ItemKind::Trait(TraitDecItem {
                 ident,
-                publicity,
                 kind: TraitKind::Itemed { items },
             }),
+            Some(publicity),
+            span,
+        )
+    }
+
+    pub fn mod_dec(ident: Ident, publicity: Publicity, inline: Inline, span: Span) -> Self {
+        Self::new(
+            ItemKind::Mod(ModuleDecItem { ident, inline }),
+            Some(publicity),
             span,
         )
     }
@@ -193,7 +198,6 @@ impl Item {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstDecItem {
     ident: Ident,
-    publicity: Option<Publicity>,
     ty: Option<TyID>,
     init: ExprID,
 }
@@ -201,7 +205,6 @@ pub struct ConstDecItem {
 #[derive(Debug, PartialEq)]
 pub struct TyDecItem {
     ident: Ident,
-    publicity: Option<Publicity>,
     generics: Option<Vec<GenericParam>>,
     target: TyID,
 }
@@ -209,14 +212,13 @@ pub struct TyDecItem {
 #[derive(Debug, PartialEq)]
 pub struct StructField {
     pub ident: Ident,
+    pub publicity: Publicity,
     pub ty: TyID,
-    pub publicity: Option<Publicity>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct StructDecItem {
     ident: Ident,
-    publicity: Option<Publicity>,
     generics: Option<Vec<GenericParam>>,
     fields: Vec<StructField>,
 }
@@ -238,7 +240,6 @@ pub struct UnionVariant {
 #[derive(Debug, PartialEq)]
 pub struct UnionDecItem {
     ident: Ident,
-    publicity: Option<Publicity>,
     generics: Option<Vec<GenericParam>>,
     variants: Vec<UnionVariant>,
 }
@@ -252,7 +253,6 @@ pub struct EnumVariant {
 #[derive(Debug, PartialEq)]
 pub struct EnumDecItem {
     ident: Ident,
-    publicity: Option<Publicity>,
     variants: Vec<EnumVariant>,
 }
 
@@ -271,7 +271,6 @@ impl FnParam {
 #[derive(Debug, PartialEq)]
 pub struct FnDecItem {
     ident: Ident,
-    publicity: Option<Publicity>,
     constant: Option<Span>,
     generics: Option<Vec<GenericParam>>,
     params: Option<Vec<FnParam>>,
@@ -296,6 +295,23 @@ pub enum TraitKind {
 #[derive(Debug, PartialEq)]
 pub struct TraitDecItem {
     ident: Ident,
-    publicity: Option<Publicity>,
     kind: TraitKind,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Inline {
+    Inline(Vec<ItemID>),
+    Extern,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ModuleDecItem {
+    pub ident: Ident,
+    inline: Inline,
+}
+
+impl ModuleDecItem {
+    pub fn is_inline(&self) -> bool {
+        matches!(self.inline, Inline::Inline(_))
+    }
 }

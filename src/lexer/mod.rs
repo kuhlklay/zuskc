@@ -1,18 +1,36 @@
 use crate::{
     lexer::token::{KEYWORDS, Spacing, Token, TokenKind},
     source::{SourceFile, Span},
+    utils::sync::Lrc,
 };
 
 pub mod token;
 
-pub struct Lexer<'a> {
-    pub file: &'a SourceFile,
+pub struct Lexer {
+    pub file: Lrc<SourceFile>,
     pub pos: usize,
 }
 
-impl<'a> Lexer<'a> {
-    pub fn new(file: &'a SourceFile) -> Self {
+impl Lexer {
+    pub fn new(file: Lrc<SourceFile>) -> Self {
         Self { file, pos: 0 }
+    }
+
+    pub fn collect(&mut self) -> Vec<Token> {
+        let mut tokens = Vec::with_capacity(self.file.content.len() / 6);
+
+        loop {
+            let token = self.next();
+            let is_eof = token.kind == TokenKind::EOF;
+
+            tokens.push(token);
+
+            if is_eof {
+                break;
+            }
+        }
+
+        tokens
     }
 
     fn input(&self) -> &[u8] {
@@ -20,17 +38,15 @@ impl<'a> Lexer<'a> {
     }
 
     fn peek(&self, offset: usize) -> &u8 {
-        self.input()
-            .get(self.pos as usize + offset)
-            .unwrap_or(&b'\0')
+        self.input().get(self.pos + offset).unwrap_or(&b'\0')
     }
 
     fn advance(&mut self, offset: usize) {
-        self.pos += offset as usize;
+        self.pos += offset;
     }
 
     fn tokenize(&mut self, kind: TokenKind, start: usize, len: usize, spacing: Spacing) -> Token {
-        Token::new(kind, Span::new(start, len, self.file.file_id), spacing)
+        Token::new(kind, Span::new(start, len, self.file.id), spacing)
     }
 
     fn skip_whitespace(&mut self) {
@@ -258,12 +274,12 @@ impl<'a> Lexer<'a> {
 
         let text = &self.file.content[start..start + len];
 
-        self.advance(len);
-
         if let Some(&kind) = KEYWORDS.get(text) {
+            self.advance(len);
             return self.tokenize(kind, start, len, Spacing::Alone);
         }
 
+        self.advance(len);
         self.tokenize(TokenKind::Ident, start, len, Spacing::Alone)
     }
 

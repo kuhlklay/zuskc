@@ -8,7 +8,7 @@ fn a() {
 
 pub const A: u32 = a?.or()? + -2;
 
-pub(module) type AllocVec<
+pub(mod) type AllocVec<
 	T: Debug + Format + Clone,
 	A: Allocator = Global,
 > = Vec<T, A>;
@@ -34,25 +34,29 @@ union Option<T> {
 	None,
 }
 
-pub const fn a<T: Clone>(&self, a: Vec<A>) -> Result<T, ()> {
-	self.a.into()
-}
+// pub const fn a<T: Clone>(&self, a: Vec<A>) -> Result<T, ()> {
+//		self.a.into()
+// }
 
-impl<T, E: Error> Residue for Result<T, E> {
-	const fn residate(&self) -> T {
-		//  match &self {
-		//		Ok(o) => o,
-		//		Err(e) => panic!("try to unwrap error"),
-		//	}
-	}
-}
+// impl<T, E: Error> Residue for Result<T, E> {
+//		const fn residate(&self) -> T {
+//		match &self {
+//			Ok(o) => o,
+//			Err(e) => panic!("try to unwrap error"),
+//		}
+//	}
+// }
 
 pub trait ThreadSafe = Send + Sync;
 
-trait T = ;
+trait T = ThreadSafe + Clone + Copy;
 
 pub trait Unwrappable {
-		type Output = T;
+	type Output = T;
 
-		fn a() -> Output;
-	}
+	fn a() -> Output;
+}
+
+pub mod a {
+	type A = u32;
+}

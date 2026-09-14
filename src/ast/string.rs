@@ -10,13 +10,13 @@ impl StringID {
     pub const EMPTY: StringID = StringID(0);
 }
 
-pub struct StringPool<'a> {
+pub struct StringMap<'a> {
     arena: &'a Bump,
-    indices: HashMap<&'a [u8], StringID>,
-    strings: Vec<&'a [u8]>,
+    indices: HashMap<&'a str, StringID>,
+    strings: Vec<&'a str>,
 }
 
-impl<'a> StringPool<'a> {
+impl<'a> StringMap<'a> {
     pub fn new(arena: &'a Bump) -> Self {
         Self {
             arena,
@@ -25,14 +25,14 @@ impl<'a> StringPool<'a> {
         }
     }
 
-    pub fn intern(&mut self, text: &[u8]) -> StringID {
+    pub fn intern(&mut self, text: &str) -> StringID {
         if let Some(&id) = self.indices.get(text) {
             return id;
         }
 
         let id = StringID(self.strings.len());
 
-        let string = self.arena.alloc_slice_copy(text);
+        let string = self.arena.alloc_str(text);
 
         self.indices.insert(string, id);
         self.strings.push(string);
@@ -40,7 +40,7 @@ impl<'a> StringPool<'a> {
         id
     }
 
-    pub fn get(&self, id: StringID) -> &[u8] {
+    pub fn get(&self, id: StringID) -> &'a str {
         self.strings[id.0 as usize]
     }
 }

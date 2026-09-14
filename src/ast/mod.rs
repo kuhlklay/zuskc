@@ -14,7 +14,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct AST {
-    items: Arena<ItemID, Item>,
+    pub items: Arena<ItemID, Item>,
     exprs: Arena<ExprID, Expr>,
     stmts: Arena<StmtID, Stmt>,
     types: Arena<TyID, Ty>,
@@ -70,29 +70,72 @@ impl Ident {
         Self { id, span }
     }
 
+    pub fn id(&self) -> StringID {
+        self.id
+    }
+
     pub fn span(&self) -> Span {
         self.span
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PublicityKind {
-    Public,
-    Root,
-    Module,
-    Super,
-    Self_,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Publicity {
-    pub kind: PublicityKind,
-    pub span: Span,
+pub enum Publicity {
+    Private,
+    /// `pub`
+    Public {
+        span: Span,
+    },
+    /// `pub(root)`
+    Root {
+        span: Span,
+    },
+    /// `pub(crate)`
+    Module {
+        span: Span,
+    },
+    /// `pub(super)`
+    Super {
+        span: Span,
+    },
+    /// `pub(self)`
+    Self_ {
+        span: Span,
+    },
+    // /// `pub(in path)`
+    // InPath {
+    //     span: Span,
+    //     path: ModulePath,
+    // },
 }
 
 impl Publicity {
-    pub fn new(kind: PublicityKind, span: Span) -> Self {
-        Self { kind, span }
+    pub fn span(&self) -> Option<Span> {
+        match self {
+            Publicity::Private => None,
+            Publicity::Public { span }
+            | Publicity::Root { span }
+            | Publicity::Module { span }
+            | Publicity::Super { span }
+            | Publicity::Self_ { span }
+            // | Publicity::InPath { span, .. }
+            => Some(*span),
+        }
+    }
+
+    pub fn is_public(&self) -> bool {
+        matches!(
+            self,
+            Publicity::Public { .. }
+                | Publicity::Root { .. }
+                | Publicity::Module { .. }
+                | Publicity::Super { .. }
+                | Publicity::Self_ { .. } // | Publicity::InPath { .. }
+        )
+    }
+
+    pub fn is_private(&self) -> bool {
+        matches!(self, Publicity::Private)
     }
 }
 

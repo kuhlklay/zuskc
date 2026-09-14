@@ -1,3 +1,4 @@
+mod cursor;
 mod expr;
 mod items;
 mod operator;
@@ -6,59 +7,88 @@ mod restrictions;
 mod stmt;
 mod types;
 
-use std::collections::VecDeque;
-
-use bumpalo::Bump;
-
 use crate::{
     ast::{
-        AST, Ident, ItemID, Publicity, PublicityKind,
+        AST, Ident, ItemID, Publicity,
         items::{Item, ItemKind},
-        string::StringPool,
     },
     lexer::{
         Lexer,
         token::{Token, TokenKind},
     },
-    parser::restrictions::Restrictions,
-    source::SourceFile,
+    parser::{
+        cursor::{TokenCursor, TokenStream},
+        restrictions::Restrictions,
+    },
+    session::Session,
+    source::{FileID, SourceFile},
+    utils::sync::Lrc,
 };
 
-pub struct Parser<'a> {
-    lexer: Lexer<'a>,
-    buffer: VecDeque<Token>,
+pub struct Parser<'s> {
+    session: &'s Session,
+    file: Lrc<SourceFile>,
+    cursor: TokenCursor,
     restrictions: Restrictions,
-    strings: StringPool<'a>,
     ast: AST,
 }
 
-impl<'a> Parser<'a> {
-    pub fn new(src: &'a SourceFile, bump: &'a Bump) -> Self {
+impl<'s> Parser<'s> {
+    pub fn new(session: &'s Session, file_id: FileID) -> Self {
+        let file = session.file(file_id);
+        let tokens = Lexer::new(Lrc::clone(&file)).collect();
+        let stream = TokenStream::new(tokens);
         Self {
-            lexer: Lexer::new(src),
-            buffer: VecDeque::with_capacity(8),
+            session,
+            file,
+            cursor: TokenCursor::new(stream),
             restrictions: Restrictions::empty(),
-            strings: StringPool::new(bump),
             ast: AST::new(),
         }
     }
 
-    fn pos(&self) -> usize {
-        self.lexer.pos
+    pub fn pos(&self) -> usize {
+        self.cursor.pos()
     }
 
-    fn file_id(&self) -> usize {
-        self.lexer.file.file_id
+    pub fn file_id(&self) -> FileID {
+        self.file.id
     }
 
-    #[allow(dead_code)]
+    pub fn peek(&self, n: usize) -> &Token {
+        self.cursor.peek(n)
+    }
+
+    pub fn at_eof(&self) -> bool {
+        self.cursor.at_eof()
+    }
+
+    pub fn bump(&mut self) -> Token {
+        self.cursor.bump()
+    }
+
+    pub fn expect(&mut self, kind: TokenKind) -> Result<Token, ()> {
+        if self.peek(0).kind == kind {
+            Ok(self.bump())
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn checkpoint(&self) -> usize {
+        self.cursor.checkpoint()
+    }
+
+    pub fn rollback(&mut self, cp: usize) {
+        self.cursor.rollback(cp);
+    }
+
     pub fn ast(&self) -> &AST {
         &self.ast
     }
 
-    #[allow(dead_code)]
-    pub fn ast_mut(&mut self) -> &mut AST {
-        &mut self.ast
+    pub fn take_ast(self) -> AST {
+        self.ast
     }
 
     fn with_restrictions<T>(
@@ -77,114 +107,91 @@ impl<'a> Parser<'a> {
         result
     }
 
-    fn make_ident(&mut self, token: &Token) -> Ident {
-        let id = {
-            let text = self
-                .lexer
-                .file
-                .content
-                .get(token.span.as_range())
-                .unwrap_or("")
-                .as_bytes();
-            self.strings.intern(text)
-        };
-
-        Ident::new(id, token.span)
+    pub fn make_ident(&mut self, tok: &Token) -> Ident {
+        let text = &self.file.content[tok.span.as_range()];
+        let id = self.session.intern(text);
+        Ident::new(id, tok.span)
     }
 
-    fn ensure_buffered(&mut self, len: usize) {
-        while self.buffer.len() <= len {
-            let token = self.lexer.next();
-
-            println!("{:?} @ {:?}", token.kind, token.span);
-
-            self.buffer.push_back(token);
+    pub fn advance(&mut self, n: usize) {
+        for _ in 0..n {
+            self.bump();
         }
     }
 
-    fn peek(&mut self, offset: usize) -> Token {
-        self.ensure_buffered(offset);
-
-        self.buffer[offset]
-    }
-
-    fn advance(&mut self, len: usize) {
-        for _ in 0..len {
-            if self.buffer.pop_front().is_none() {
-                let _ = self.lexer.next();
-            }
-        }
-    }
-
-    fn consume(&mut self) -> Token {
-        self.ensure_buffered(0);
-
-        self.buffer.pop_front().unwrap()
-    }
-
-    fn expect(&mut self, kind: TokenKind) -> Result<Token, ()> {
-        if self.peek(0).kind == kind {
-            return Ok(self.consume());
-        }
-
-        Err(())
+    pub fn consume(&mut self) -> Token {
+        let token = *self.peek(0);
+        self.advance(1);
+        token
     }
 
     pub fn next(&mut self) -> Result<ItemID, ()> {
-        let current = self.peek(0);
+        let current = *self.peek(0);
 
-        if current.kind == TokenKind::EOF {
+        if self.at_eof() {
             return Ok(self
                 .ast
                 .items()
-                .push(Item::new(ItemKind::EOF, current.span)));
+                .push(Item::new(ItemKind::EOF, None, current.span)));
         }
 
         self.parse_item()
     }
 
-    fn parse_publicity(&mut self) -> Result<Option<Publicity>, ()> {
-        let first = self.peek(0);
+    fn parse_publicity(&mut self) -> Result<Publicity, ()> {
+        let first = *self.peek(0);
 
         if first.kind != TokenKind::KwPub {
-            return Ok(None);
+            return Ok(Publicity::Private);
         }
 
         self.advance(1);
 
         if self.peek(0).kind != TokenKind::LeftParen {
-            return Ok(Some(Publicity::new(PublicityKind::Public, first.span)));
+            return Ok(Publicity::Public { span: first.span });
         }
 
         let _ = self.consume();
 
-        let kind = match self.peek(0).kind {
+        match self.peek(0).kind {
             TokenKind::KwSelf => {
                 self.advance(1);
-                PublicityKind::Self_
+                let close = self.expect(TokenKind::RightParen)?;
+
+                Ok(Publicity::Self_ {
+                    span: first.span.merge(close.span),
+                })
             }
 
             TokenKind::KwModule => {
                 self.advance(1);
-                PublicityKind::Module
+                let close = self.expect(TokenKind::RightParen)?;
+
+                Ok(Publicity::Module {
+                    span: first.span.merge(close.span),
+                })
             }
 
             TokenKind::KwSuper => {
                 self.advance(1);
-                PublicityKind::Super
+                let close = self.expect(TokenKind::RightParen)?;
+
+                Ok(Publicity::Super {
+                    span: first.span.merge(close.span),
+                })
             }
 
             TokenKind::KwRoot => {
                 self.advance(1);
-                PublicityKind::Root
+                let close = self.expect(TokenKind::RightParen)?;
+
+                Ok(Publicity::Root {
+                    span: first.span.merge(close.span),
+                })
             }
 
-            _ => return Err(()),
-        };
-
-        let close = self.expect(TokenKind::RightParen)?;
-
-        Ok(Some(Publicity::new(kind, first.span.merge(close.span))))
+            _ => Err(()),
+        }
     }
 
     fn parse_separated<T>(
@@ -206,29 +213,23 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            let Some((delimiter_kind, ref trailing)) = delimiter else {
-                return Err(());
-            };
-
-            if self.peek(0).kind != delimiter_kind {
-                return Err(());
-            }
-
-            self.advance(1);
-
-            if self.peek(0).kind == end {
-                match trailing {
-                    Trailing::Allowed => break,
-                    Trailing::Forbidden => return Err(()),
+            if let Some((kind, ref trailing)) = delimiter {
+                if self.peek(0).kind != kind {
+                    return Err(());
                 }
-            }
+                self.advance(1);
+                if self.peek(0).kind == end {
+                    match trailing {
+                        Trailing::Allowed => break,
+                        Trailing::Forbidden => return Err(()),
+                    }
+                }
+            };
         }
-
         Ok(items)
     }
 }
 
-#[allow(dead_code)]
 enum Trailing {
     Allowed,
     Forbidden,

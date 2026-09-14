@@ -2,15 +2,19 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
+use crate::{define_id, utils::sync::Lrc};
+
+define_id!(FileID);
+
 #[derive(Debug, Clone, Copy, Serialize, PartialEq)]
 pub struct Span {
-    file_id: usize,
+    file_id: FileID,
     start: usize,
     len: usize,
 }
 
 impl Span {
-    pub fn new(start: usize, len: usize, file_id: usize) -> Self {
+    pub fn new(start: usize, len: usize, file_id: FileID) -> Self {
         Self {
             file_id,
             start,
@@ -34,7 +38,7 @@ impl Span {
     }
 
     #[inline]
-    pub const fn file_id(&self) -> usize {
+    pub const fn file_id(&self) -> FileID {
         self.file_id
     }
 
@@ -82,26 +86,23 @@ impl Range {
 }
 
 pub struct SourceFile {
-    pub entry: PathBuf,
-    pub file_id: usize,
+    pub id: FileID,
+    pub path: PathBuf,
     pub content: String,
     pub line_starts: Vec<usize>,
 }
 
 impl SourceFile {
-    pub fn new(entry: PathBuf, file_id: usize) -> Self {
-        let content = std::fs::read_to_string(&entry).unwrap();
-
+    pub fn new(id: FileID, path: PathBuf, content: String) -> Self {
         let mut line_starts = vec![0];
-        for (i, c) in content.char_indices() {
-            if c == '\n' {
+        for (i, b) in content.bytes().enumerate() {
+            if b == b'\n' {
                 line_starts.push(i + 1);
             }
         }
-
         Self {
-            entry,
-            file_id,
+            id,
+            path,
             content,
             line_starts,
         }
@@ -113,11 +114,40 @@ impl SourceFile {
             Err(line) => line.saturating_sub(1),
         };
 
-        let line_start = self.line_starts[line as usize];
+        let line_start = self.line_starts[line];
 
         Position {
             line,
             character: offset - line_start,
         }
+    }
+}
+
+pub struct SourceMap {
+    files: Vec<Lrc<SourceFile>>,
+    // macros: Vec<MacroData>,
+}
+
+impl SourceMap {
+    pub fn new() -> Self {
+        Self {
+            files: Vec::new(),
+            // macros: Vec::new(),
+        }
+    }
+
+    pub fn add_file(&mut self, path: PathBuf, content: String) -> FileID {
+        let id = FileID(self.files.len());
+        self.files
+            .push(Lrc::new(SourceFile::new(id, path, content)));
+        id
+    }
+
+    pub fn file(&self, id: FileID) -> Lrc<SourceFile> {
+        Lrc::clone(&self.files[id.index()])
+    }
+
+    pub fn file_count(&self) -> usize {
+        self.files.len()
     }
 }

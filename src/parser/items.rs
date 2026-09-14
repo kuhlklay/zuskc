@@ -2,10 +2,9 @@ use core::panic;
 
 use crate::{
     ast::{
-        Ident, ItemID, Publicity, PublicityKind,
-        items::{EnumVariant, FnParam, Item, StructField, UnionVariant, UnionVariantKind},
+        Ident, ItemID, Publicity,
+        items::{EnumVariant, FnParam, Inline, Item, StructField, UnionVariant, UnionVariantKind},
         patterns::Pat,
-        types::Ty,
     },
     lexer::token::TokenKind,
     parser::{Parser, Trailing, restrictions::Restrictions},
@@ -37,17 +36,45 @@ impl<'a> Parser<'a> {
 
             (TokenKind::KwFn, _) => self.parse_fn_dec_item(publicity, None),
 
-            (TokenKind::KwImpl, None) => self.parse_impl_item(),
+            (TokenKind::KwImpl, Publicity::Private) => self.parse_impl_item(),
 
             (TokenKind::KwTrait, _) => self.parse_trait_item(publicity),
 
-            (_, Some(_)) => panic!("unexpected public keyword (not allowed here)"),
+            (TokenKind::KwModule, _) => {
+                let first = self.consume();
+
+                let ident_token = self.expect(TokenKind::Ident)?;
+                let ident = self.make_ident(&ident_token);
+
+                let inline;
+                let span;
+
+                if self.peek(0).kind == TokenKind::LeftCurly {
+                    self.advance(1);
+
+                    let items =
+                        self.parse_separated(None, TokenKind::RightCurly, Self::parse_item)?;
+
+                    inline = Inline::Inline(items);
+                    span = first.span.merge(self.expect(TokenKind::RightCurly)?.span);
+                } else {
+                    inline = Inline::Extern;
+                    span = first.span.merge(self.expect(TokenKind::Semicolon)?.span);
+                }
+
+                Ok(self
+                    .ast
+                    .items()
+                    .push(Item::mod_dec(ident, publicity, inline, span)))
+            }
+
+            (_, p) if p.is_public() => panic!("unexpected public keyword (not allowed here)"),
 
             _ => panic!("expected item"),
         }
     }
 
-    pub fn parse_const_item(&mut self, publicity: Option<Publicity>) -> Result<ItemID, ()> {
+    pub fn parse_const_item(&mut self, publicity: Publicity) -> Result<ItemID, ()> {
         let const_token = self.consume();
 
         let ident_token = self.expect(TokenKind::Ident)?;
@@ -67,8 +94,8 @@ impl<'a> Parser<'a> {
 
         let _ = self.expect(TokenKind::Semicolon)?;
 
-        let span = if let Some(public) = publicity {
-            public.span.merge(self.ast.exprs()[expr.index()].span)
+        let span = if let Some(span) = publicity.span() {
+            span.merge(self.ast.exprs()[expr.index()].span)
         } else {
             const_token.span.merge(self.ast.exprs()[expr.index()].span)
         };
@@ -79,7 +106,7 @@ impl<'a> Parser<'a> {
             .push(Item::const_dec(ident, publicity, ty, expr, span)))
     }
 
-    pub fn parse_type_dec_item(&mut self, publicity: Option<Publicity>) -> Result<ItemID, ()> {
+    pub fn parse_type_dec_item(&mut self, publicity: Publicity) -> Result<ItemID, ()> {
         let type_kw = self.consume();
 
         let ident_token = self.expect(TokenKind::Ident)?;
@@ -105,7 +132,7 @@ impl<'a> Parser<'a> {
             .push(Item::type_dec(ident, publicity, generics, target, span)))
     }
 
-    pub fn parse_struct_dec_item(&mut self, publicity: Option<Publicity>) -> Result<ItemID, ()> {
+    pub fn parse_struct_dec_item(&mut self, publicity: Publicity) -> Result<ItemID, ()> {
         let struct_kw = self.consume();
 
         let ident_token = self.expect(TokenKind::Ident)?;
@@ -127,8 +154,8 @@ impl<'a> Parser<'a> {
 
         let close = self.expect(TokenKind::RightCurly)?;
 
-        let span = if let Some(public) = publicity {
-            public.span.merge(close.span)
+        let span = if let Some(span) = publicity.span() {
+            span.merge(close.span)
         } else {
             struct_kw.span.merge(close.span)
         };
@@ -140,12 +167,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_struct_field(&mut self) -> Result<StructField, ()> {
-        let publicity = if self.peek(0).kind == TokenKind::KwPub {
-            self.advance(1);
-            Some(Publicity::new(PublicityKind::Public, self.peek(0).span))
-        } else {
-            None
-        };
+        let publicity = self.parse_publicity()?;
 
         let ident_token = self.expect(TokenKind::Ident)?;
         let ident = self.make_ident(&ident_token);
@@ -155,13 +177,13 @@ impl<'a> Parser<'a> {
         let ty = self.parse_type()?;
 
         Ok(StructField {
-            publicity,
             ident,
+            publicity,
             ty,
         })
     }
 
-    pub fn parse_union_dec_item(&mut self, publicity: Option<Publicity>) -> Result<ItemID, ()> {
+    pub fn parse_union_dec_item(&mut self, publicity: Publicity) -> Result<ItemID, ()> {
         let union_kw = self.consume();
 
         let ident_token = self.expect(TokenKind::Ident)?;
@@ -183,8 +205,8 @@ impl<'a> Parser<'a> {
 
         let close = self.expect(TokenKind::RightCurly)?;
 
-        let span = if let Some(public) = publicity {
-            public.span.merge(close.span)
+        let span = if let Some(span) = publicity.span() {
+            span.merge(close.span)
         } else {
             union_kw.span.merge(close.span)
         };
@@ -227,7 +249,7 @@ impl<'a> Parser<'a> {
         Ok(UnionVariant { name, kind, span })
     }
 
-    pub fn parse_enum_dec_item(&mut self, publicity: Option<Publicity>) -> Result<ItemID, ()> {
+    pub fn parse_enum_dec_item(&mut self, publicity: Publicity) -> Result<ItemID, ()> {
         let enum_kw = self.consume();
 
         let ident_token = self.expect(TokenKind::Ident)?;
@@ -243,8 +265,8 @@ impl<'a> Parser<'a> {
 
         let close = self.expect(TokenKind::RightCurly)?;
 
-        let span = if let Some(public) = publicity {
-            public.span.merge(close.span)
+        let span = if let Some(span) = publicity.span() {
+            span.merge(close.span)
         } else {
             enum_kw.span.merge(close.span)
         };
@@ -272,7 +294,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse_fn_dec_item(
         &mut self,
-        publicity: Option<Publicity>,
+        publicity: Publicity,
         constant: Option<Span>,
     ) -> Result<ItemID, ()> {
         let fn_token = self.consume();
@@ -336,8 +358,8 @@ impl<'a> Parser<'a> {
             close.span
         };
 
-        let span = if let Some(p) = publicity {
-            p.span
+        let span = if let Some(span) = publicity.span() {
+            span
         } else if let Some(cs) = constant {
             cs
         } else {
@@ -351,7 +373,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function_param(&mut self, idx: &mut usize) -> Result<FnParam, ()> {
-        let arr = [self.peek(0), self.peek(1), self.peek(2)];
+        // let arr = [self.peek(0), self.peek(1), self.peek(2)];
 
         // if *idx == 0 {
         //     match (arr[0].kind, arr[1].kind, arr[2].kind) {
@@ -464,7 +486,7 @@ impl<'a> Parser<'a> {
             .push(Item::impl_dec(target_ty, generics, trait_ty, items, span)))
     }
 
-    fn parse_trait_item(&mut self, publicity: Option<Publicity>) -> Result<ItemID, ()> {
+    fn parse_trait_item(&mut self, publicity: Publicity) -> Result<ItemID, ()> {
         let first = self.consume();
 
         let ident_token = self.expect(TokenKind::Ident)?;
@@ -492,7 +514,7 @@ impl<'a> Parser<'a> {
             let _ = self.expect(TokenKind::LeftCurly)?;
 
             let items = self.with_restrictions(Restrictions::IN_TRAIT, |p| {
-                p.parse_separated(None, TokenKind::RightCurly, Self::parse_item)
+                p.parse_separated(None, TokenKind::RightCurly, Self::parse_assoc_item)
             })?;
 
             let close = self.expect(TokenKind::RightCurly)?;
@@ -528,7 +550,7 @@ impl<'a> Parser<'a> {
 
             (TokenKind::KwType, _) => self.parse_type_dec_item(publicity),
 
-            (_, Some(_)) => panic!("unexpected public keyword (not allowed here)"),
+            (_, p) if p.is_public() => panic!("unexpected public keyword (not allowed here)"),
 
             _ => Err(()),
         }

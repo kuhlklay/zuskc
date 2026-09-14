@@ -6,12 +6,10 @@ use crate::{
 
 impl<'a> Parser<'a> {
     pub(super) fn parse_stmt(&mut self) -> Result<StmtID, ()> {
-        let publicity = self.parse_publicity()?;
+        match self.peek(0).kind {
+            TokenKind::KwDec => self.parse_dec_stmt(),
 
-        match (self.peek(0).kind, publicity) {
-            (TokenKind::KwDec, None) => self.parse_dec_stmt(),
-
-            (TokenKind::KwIf, None) => {
+            TokenKind::KwIf => {
                 let expr = self.parse_if_expr()?;
 
                 let span = self.ast.exprs()[expr.index()].span;
@@ -19,8 +17,7 @@ impl<'a> Parser<'a> {
                 Ok(self.ast.stmts().push(Stmt::expr(expr, span)))
             }
 
-            (_, None) => self.with_restrictions(Restrictions::STMT_EXPR, Self::parse_expr_stmt),
-            _ => panic!("unexpected public (not allowed here)"),
+            _ => self.with_restrictions(Restrictions::STMT_EXPR, Self::parse_expr_stmt),
         }
     }
 

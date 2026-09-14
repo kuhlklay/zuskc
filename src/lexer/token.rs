@@ -142,7 +142,7 @@ pub static KEYWORDS: phf::Map<&'static str, TokenKind> = phf_map! {
     "import" => TokenKind::KwImport,
     "self" => TokenKind::KwSelf,
     "Self" => TokenKind::KwSelfType,
-    "module" => TokenKind::KwModule,
+    "mod" => TokenKind::KwModule,
     "super" => TokenKind::KwSuper,
     "root" => TokenKind::KwRoot,
 
